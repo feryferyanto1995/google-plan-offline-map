@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline map — Google Plan</title>
+<!-- Everything on this page loads from this folder or ../claude-prototype/data. No network needed. -->
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<link rel="stylesheet" href="demo.css?v=18">
+</head>
+<body>
+<div id="map" role="region" aria-label="Map"></div>
+
+<nav class="rail" aria-label="Map tools">
+  <button class="rail__btn" data-tab="search" aria-current="true"><span class="pill" data-ic="search"></span>Search</button>
+  <button class="rail__btn" data-tab="nearby"><span class="pill" data-ic="nearby"></span>Nearby</button>
+  <button class="rail__btn" data-tab="directions"><span class="pill" data-ic="directions"></span>Directions</button>
+  <button class="rail__btn" data-tab="meet"><span class="pill" data-ic="groups"></span>Meet up</button>
+  <span class="rail__spacer"></span>
+  <span class="offline" title="All map tiles, places and routes are bundled. Nothing is fetched from the internet."><span class="dot"></span>Offline</span>
+</nav>
+
+<aside class="panel" id="panel" aria-label="Map panel" aria-live="polite"></aside>
+
+<div class="areas" role="group" aria-label="Jump to area">
+  <button class="chip chip--map" data-area="tokyo" aria-pressed="true">Tokyo</button>
+  <button class="chip chip--map" data-area="kyoto" aria-pressed="false">Kyoto</button>
+</div>
+<div class="hint" id="hint" hidden></div>
+
+<script src="vendor/maplibre-gl.js"></script>
+<script src="offline-osm.js?v=18"></script>
+<script src="demo.js?v=18"></script>
+</body>
+</html>
