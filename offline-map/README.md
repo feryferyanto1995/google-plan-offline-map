@@ -66,6 +66,8 @@ To change the coverage, edit `AREAS` in both scripts. Keep each area inside the 
 |---|---|---|
 | `photo` (url, author, licence, source link) | Wikimedia Commons via Wikidata | 114 most famous attractions (ranked by how many Wikipedia editions cover them), 500 px JPEGs in `photos/` (7.8 MB) |
 | `description` | English Wikipedia intro (CC BY-SA) | the same attractions |
+| `gallery` (up to 4 more photos, each with author, licence, source link) | The place's English Wikipedia article images, topped up from its Commons category | the famous attractions |
+| `views` (total, en, ja, period) | **Real** Wikipedia page views, English + Japanese articles, last 12 complete months (Wikimedia pageviews API, human traffic) | the famous attractions |
 | `tips` (text, price, hours) | Wikivoyage see / do / eat / drink / buy listings (CC BY-SA) | about 350 places. 71 restaurants and bars from Wikivoyage that OSM lacks are added to the map |
 | `info` (cuisines, vegetarian, vegan, takeaway, outdoor seating, cards, Wi-Fi, wheelchair, smoking, fee, phone, website, chain) | OpenStreetMap tags | about 21,000 places, most of them food |
 | `sampleReviews` | **Generated examples, not real.** Picked from short pools by place type (temple, museum, ramen, sushi, café…) | any sight, park, shop, food, café, bar or hotel |
@@ -74,9 +76,11 @@ To change the coverage, edit `AREAS` in both scripts. Keep each area inside the 
 
 **Credits.** Show each photo's author and licence with the image; the demo does this in the caption. Credit Wikipedia and Wikivoyage text where it's shown.
 
+**Photo bubbles.** In the Search and Nearby tabs the demo shows the famous places as round photo bubbles. More appear as you zoom in, and a less famous bubble that would overlap a more famous one is skipped. Clicking a bubble opens a photo-led card above it: a swipeable gallery with a credit for each photo, the example rating, the real Wikipedia view count, photo count, description, hours, and Directions / More details.
+
 **Clicking the map.** In the demo, clicking a place's icon or label opens its card. The map's POIs come from the same OSM data and are matched to the places pack by name. Clicking empty map does nothing; no pin is dropped. In Directions and Meet up, a click still sets a point.
 
-To refresh: `python3 build/fetch_extras.py <raw> photos`, then `build_pack.py`. Wikimedia rate-limits hard, so the fetcher batches its requests (one SPARQL query per city, 50 files per Commons call) and backs off on HTTP 429. Bump `dataVersion` in `OfflineOSM.create()` after rebuilding, so browsers don't serve stale packs.
+To refresh: `python3 build/fetch_extras.py <raw> photos`, then `build_pack.py`, then `python3 build/enrich_famous.py` (galleries and view counts; it edits `data/details-*.json` in place and caches its results in `build/famous-cache.json`). Wikimedia rate-limits hard, so the fetcher batches its requests (one SPARQL query per city, 50 files per Commons call) and backs off on HTTP 429. Bump `dataVersion` in `OfflineOSM.create()` after rebuilding, so browsers don't serve stale packs.
 
 ## Map style
 The demo uses `data/style-streets.json`: the bundled OpenMapTiles style recoloured to look like Mapbox Streets v12. It has warm-grey land, a white street grid with grey casings, orange motorways, yellow trunk roads, green parks, plain land until buildings fade in at z15, and POI labels coloured by category. It reuses the same offline tiles, fonts and icons, so there's no Mapbox token and no Mapbox data. Only the colours are matched by eye from the public Streets style. The icons stay the bundled OSM ones, so they're grey glyphs rather than Mapbox's coloured circles.

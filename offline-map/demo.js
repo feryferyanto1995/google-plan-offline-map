@@ -38,7 +38,7 @@ const CAT = {
 };
 const AREAS = { tokyo: { center: [139.757, 35.684], zoom: 12.6 }, kyoto: { center: [135.7681, 35.0036], zoom: 12.8 } };
 
-const osm = OfflineOSM.create({ dataUrl: 'data/', tilesUrl: '../claude-prototype/data/', styleUrl: 'data/style-streets.json?v=6', dataVersion: 3 });
+const osm = OfflineOSM.create({ dataUrl: 'data/', tilesUrl: '../claude-prototype/data/', styleUrl: 'data/style-streets.json?v=6', dataVersion: 6 });
 const S = { tab: 'search', places: [], active: null, dir: { from: null, to: null, mode: 'transit', focus: 'from', route: null }, meet: { people: [], cat: 'cafe', result: null, pick: null }, nearbyCat: null };
 const markers = [];
 let map;
@@ -60,6 +60,8 @@ $$('[data-ic]').forEach((el) => { el.innerHTML = ic(el.dataset.ic); });
     map.getSource('route').setData(lastRoute); // anything routed while tiles were loading
   });
   map.on('click', onMapClick);
+  map.on('moveend', drawBubbles);
+  map.on('load', drawBubbles);
   map.on('mousemove', (e) => {   // pointer cursor over clickable places (search / nearby tabs)
     if (S.tab !== 'search' && S.tab !== 'nearby') { map.getCanvas().style.cursor = ''; return; }
     const layers = POI_LAYERS.filter((id) => map.getLayer(id));
@@ -134,7 +136,90 @@ const toPoint = (r) => ({ name: r.place && r.place.distanceM < 30 ? r.place.name
 let hintT; function hint(msg) { const h = $('#hint'); h.textContent = msg; h.hidden = false; clearTimeout(hintT); hintT = setTimeout(() => { h.hidden = true; }, 2600); }
 
 $$('[data-area]').forEach((b) => b.addEventListener('click', () => map.flyTo({ ...AREAS[b.dataset.area], duration: 1200 })));
-$$('.rail__btn').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.tab; $$('.rail__btn').forEach((x) => x.setAttribute('aria-current', String(x === b))); setRoute([]); clearMarkers(); render(); }));
+$$('.rail__btn').forEach((b) => b.addEventListener('click', () => { S.tab = b.dataset.tab; $$('.rail__btn').forEach((x) => x.setAttribute('aria-current', String(x === b))); setRoute([]); clearMarkers(); render(); drawBubbles(); }));
+
+
+/* ---------- famous places: photo bubbles on the map, photo-led preview card on click ---------- */
+const bubbles = new Map();   // place id → maplibregl.Marker
+let preview = null;          // the open maplibregl.Popup
+const compact = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
+function drawBubbles() {
+  if (!map) return;
+  const on = S.tab === 'search' || S.tab === 'nearby';
+  const z = map.getZoom(), cap = z < 11.5 ? 8 : z < 12.5 ? 16 : z < 13.5 ? 30 : 60;
+  const keep = new Set(), taken = [], b = map.getBounds();
+  if (on) for (const p of [...FAMOUS.tokyo, ...FAMOUS.kyoto]) {   // most famous first; skip one that would overlap a more famous bubble
+    if (!b.contains([p.lng, p.lat]) || p.fame >= cap) continue;
+    const pt = map.project([p.lng, p.lat]);
+    if (taken.some((q) => Math.abs(q.x - pt.x) < 56 && Math.abs(q.y - pt.y) < 62)) continue;
+    taken.push(pt); keep.add(p.id);
+  }
+  for (const [id, m] of bubbles) if (!keep.has(id) && !m.getElement().classList.contains('is-open')) { m.remove(); bubbles.delete(id); }
+  for (const p of [...FAMOUS.tokyo, ...FAMOUS.kyoto]) {
+    if (!keep.has(p.id) || bubbles.has(p.id)) continue;
+    const el = document.createElement('button');
+    el.className = 'bub'; el.setAttribute('aria-label', `${p.name}, show photos and details`);
+    el.innerHTML = `<span class="bub__photo"><img src="${esc(p.photo)}" alt="" loading="lazy"></span><span class="bub__name">${esc(p.name)}</span>`;
+    el.addEventListener('click', (e) => { e.stopPropagation(); openPreview(p); });
+    bubbles.set(p.id, new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([p.lng, p.lat]).addTo(map));
+    el.setAttribute('aria-label', `${p.name}, show photos and details`);   // MapLibre overwrites it with "Map marker"
+    el.removeAttribute('role');
+  }
+  map.getContainer().classList.toggle('z-labels', z >= 14.5);
+}
+async function openPreview(p) {
+  if (preview) preview.remove();
+  const X = await osm.getPlaceDetails(p);
+  const photos = [X.photo, ...(X.gallery || [])].filter(Boolean);
+  const R = X.sampleReviews, V = X.views;
+  const el = document.createElement('div'); el.className = 'pv';
+  el.innerHTML = `
+    <div class="pv__media">
+      <div class="pv__track">${photos.map((ph, i) => `<img src="${esc(ph.url)}" alt="${esc(p.name)}, photo ${i + 1}" ${i ? 'loading="lazy"' : ''}>`).join('')}</div>
+      ${photos.length > 1 ? `<button class="pv__nav pv__nav--prev" aria-label="Previous photo">${ic('back', 's18')}</button><button class="pv__nav pv__nav--next" aria-label="Next photo">${ic('back', 's18')}</button>` : ''}
+      <span class="pv__count">1 / ${photos.length}</span>
+      <button class="pv__close" aria-label="Close">${ic('close', 's18')}</button>
+    </div>
+    <p class="pv__credit"></p>
+    <div class="pv__body">
+      <h3>${esc(p.name)}</h3>
+      <p class="sub">${esc([prettyType(p.type) || CAT[p.category].label.replace(/s$/, ''), p.local].filter(Boolean).join(' · '))}</p>
+      <div class="pv__stats">
+        ${R ? `<div class="pv__stat"><b>${R.rating.toFixed(1)} <span class="stars">★</span></b><span>Example rating</span></div>` : ''}
+        ${V ? `<div class="pv__stat" title="${esc(`${V.source}, ${V.period}: ${V.total.toLocaleString()} (English ${V.en.toLocaleString()}, Japanese ${V.ja.toLocaleString()})`)}"><b>${compact(V.total)}</b><span>Wikipedia views</span></div>` : ''}
+        <div class="pv__stat"><b>${photos.length}</b><span>Photo${photos.length > 1 ? 's' : ''}</span></div>
+      </div>
+      <p class="pv__note">${ic('info', 's16')}<span>${R ? 'The rating is an example, not a real rating. ' : ''}${V ? `Views are real: Wikipedia page views in English and Japanese, ${esc(V.period)}.` : ''}</span></p>
+      ${X.description ? `<p class="pv__desc">${esc(X.description)}</p><p class="credit">From <a href="${esc(X.wikipedia)}" target="_blank" rel="noopener">Wikipedia</a> · CC BY-SA</p>` : ''}
+      ${p.hours ? `<p class="pv__hours">${ic('clock', 's16')}<span>${esc(p.hours)}</span></p>` : ''}
+      <div class="pv__actions">
+        <button class="btn btn--primary" data-act="dir">${ic('directions', 's18')}Directions</button>
+        <button class="btn btn--outline" data-act="more">More details</button>
+      </div>
+    </div>`;
+  const track = el.querySelector('.pv__track'), count = el.querySelector('.pv__count'), credit = el.querySelector('.pv__credit');
+  const showCredit = (i) => { const ph = photos[i]; if (!ph) return; count.textContent = `${i + 1} / ${photos.length}`;
+    credit.innerHTML = `${esc([ph.author, ph.license].filter(Boolean).join(' · '))} · <a href="${esc(ph.source)}" target="_blank" rel="noopener">Wikimedia Commons</a>`; };
+  let cur = 0;   // arrows move from the photo they last went to, so quick clicks don't land mid-scroll
+  const go = (d) => { cur = (cur + d + photos.length) % photos.length; showCredit(cur); track.scrollTo({ left: cur * track.clientWidth, behavior: 'smooth' }); };
+  track.addEventListener('scroll', debounce(() => { cur = Math.round(track.scrollLeft / track.clientWidth); showCredit(cur); }, 120));   // swipe / trackpad
+  el.querySelector('.pv__nav--prev')?.addEventListener('click', () => go(-1));
+  el.querySelector('.pv__nav--next')?.addEventListener('click', () => go(1));
+  el.querySelector('.pv__close').addEventListener('click', () => preview && preview.remove());
+  el.querySelector('[data-act="dir"]').addEventListener('click', () => { preview.remove(); S.dir.to = { name: p.name, lat: p.lat, lng: p.lng }; S.dir.focus = 'from'; switchTab('directions'); });
+  el.querySelector('[data-act="more"]').addEventListener('click', () => { preview.remove(); openPlace(p, { fromMap: true }); });
+  el.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); if (e.key === 'Escape') preview.remove(); });
+  showCredit(0);
+  const bub = bubbles.get(p.id)?.getElement(); bub?.classList.add('is-open');
+  preview = new maplibregl.Popup({ className: 'pv-pop', closeButton: false, maxWidth: '340px', offset: [0, -66], anchor: 'bottom' })
+    .setLngLat([p.lng, p.lat]).setDOMContent(el).addTo(map);
+  preview.on('close', () => bub?.classList.remove('is-open'));
+  // make room for the card above the bubble: pan so the bubble sits just below the card's height
+  const H = map.getContainer().clientHeight, h = Math.min(el.offsetHeight, H - 66 - 32);
+  el.style.maxHeight = `${h}px`;
+  const left = innerWidth >= 900 ? $('#panel').getBoundingClientRect().right - 72 : 0;
+  map.easeTo({ center: [p.lng, p.lat], offset: [left / 2, 16 + h + 66 - H / 2], duration: 500 });
+}
 
 /* ---------- panels ---------- */
 function render() { ({ search: renderSearch, nearby: renderNearby, directions: renderDirections, meet: renderMeet })[S.tab](); }
@@ -147,8 +232,8 @@ const prettyType = (t) => (t && !['restaurant', 'cafe', 'station', 'park', 'hote
 function bindRows(list) { $$('[data-pid]').forEach((b) => b.addEventListener('click', () => openPlace(list.find((p) => p.id === b.dataset.pid)))); }
 
 let FAMOUS = { tokyo: [], kyoto: [] };
-osm.famousPlaces({ area: 'tokyo', limit: 60 }).then((l) => { FAMOUS.tokyo = l; if (S.tab === 'search' && !S.places.length) renderSearch(); });
-osm.famousPlaces({ area: 'kyoto', limit: 60 }).then((l) => { FAMOUS.kyoto = l; });
+osm.famousPlaces({ area: 'tokyo', limit: 60 }).then((l) => { FAMOUS.tokyo = l; if (S.tab === 'search' && !S.places.length) renderSearch(); drawBubbles(); });
+osm.famousPlaces({ area: 'kyoto', limit: 60 }).then((l) => { FAMOUS.kyoto = l; drawBubbles(); });
 const currentArea = () => (map && map.getCenter().lng < 137.5 ? 'kyoto' : 'tokyo');
 function famousHtml() {
   const list = FAMOUS[currentArea()].slice(0, 24);
@@ -231,7 +316,7 @@ async function openPlace(p, { fromMap = false } = {}) {
   $('#goFrom').onclick = () => { S.dir.from = pt; S.dir.focus = 'to'; switchTab('directions'); };
   $('#nearHere').onclick = () => { switchTab('nearby'); exploreAt(p.lat, p.lng); };
 }
-function switchTab(t) { S.tab = t; $$('.rail__btn').forEach((x) => x.setAttribute('aria-current', String(x.dataset.tab === t))); clearMarkers(); setRoute([]); render(); }
+function switchTab(t) { S.tab = t; $$('.rail__btn').forEach((x) => x.setAttribute('aria-current', String(x.dataset.tab === t))); clearMarkers(); setRoute([]); render(); drawBubbles(); }
 
 /* nearby / explore_area */
 let lastExplore = null;

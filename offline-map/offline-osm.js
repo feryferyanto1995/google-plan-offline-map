@@ -537,6 +537,8 @@
       const D = await loadDetails(place.area), d = (place.key && D.places[place.key]) || {};
       const out = { key: place.key, description: d.description || null, wikipedia: d.wikipedia ? `https://en.wikipedia.org/wiki/${encodeURIComponent(d.wikipedia.replace(/ /g, '_'))}` : null,
         photo: d.photo ? { ...d.photo, url: photosUrl + d.photo.file } : null, tips: (d.tips || []).map((x) => ({ ...x, source: `Wikivoyage: ${x.page}` })),
+        gallery: (d.gallery || []).map((g) => ({ ...g, url: photosUrl + g.file })),
+        views: d.views ? { total: d.views.total, en: d.views.en, ja: d.views.ja, period: d.views.period, source: 'Wikipedia page views (English + Japanese)' } : null,
         info: d.info || {}, sampleReviews: sampleReviews(place, d.info) };
       return out;
     }
@@ -545,7 +547,7 @@
       for (const P of await allPlaces()) {
         if (area && P.area !== area) continue;
         const D = await loadDetails(P.area), idx = new Map(); P.rows.forEach((r, i) => { if (r[7] === 2) idx.set(r[8], i); });
-        D.famous.forEach((k, rank) => { const i = idx.get(k); if (i === undefined) return; const pl = P.place(i); pl.photo = photosUrl + D.places[k].photo.file; pl.fame = rank; out.push(pl); });
+        D.famous.forEach((k, rank) => { const i = idx.get(k); if (i === undefined) return; const pl = P.place(i); pl.photo = photosUrl + D.places[k].photo.file; pl.fame = rank; pl.views = D.places[k].views ? D.places[k].views.total : null; pl.photoCount = 1 + (D.places[k].gallery || []).length; out.push(pl); });
       }
       return out.sort((a, b) => a.fame - b.fame).slice(0, limit);
     }
